@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadRouterConfig } from './config.js';
 import { LogStore } from './logStore.js';
 import { handleProxyRequest } from './proxy.js';
@@ -9,49 +9,72 @@ import { handleProxyRequest } from './proxy.js';
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const rootDir = join(__dirname, '..');
 const publicDir = join(rootDir, 'public');
-const port = Number(process.env.PORT ?? 8787);
-const logPath = process.env.ROUTER_LOG_PATH ?? join(rootDir, '.router-logs', 'calls.jsonl');
 
-const config = await loadRouterConfig();
-const logStore = new LogStore(logPath);
-await logStore.init();
+export const defaultLogPath = join(rootDir, '.router-logs', 'calls.jsonl');
 
-const server = createServer(async (req, res) => {
-  try {
-    if (req.url === '/' || req.url.startsWith('/assets/') || req.url === '/app.js' || req.url === '/styles.css') {
-      await serveStatic(req, res);
-      return;
+export async function createRouterServer({
+  configPath = process.env.ROUTER_CONFIG,
+  logPath = process.env.ROUTER_LOG_PATH ?? defaultLogPath,
+  fetchImpl = fetch
+} = {}) {
+  const config = await loadRouterConfig(configPath);
+  const logStore = new LogStore(logPath);
+  await logStore.init();
+
+  const server = createServer(async (req, res) => {
+    try {
+      if (req.url === '/' || req.url.startsWith('/assets/') || req.url === '/app.js' || req.url === '/styles.css') {
+        await serveStatic(req, res);
+        return;
+      }
+
+      if (req.url.startsWith('/api/logs/stream')) {
+        streamLogs(req, res, logStore);
+        return;
+      }
+
+      if (req.url.startsWith('/api/logs')) {
+        await serveLogs(req, res, logStore);
+        return;
+      }
+
+      if (req.url.startsWith('/api/config')) {
+        serveConfig(res, config);
+        return;
+      }
+
+      await handleProxyRequest(req, res, { config, logStore, fetchImpl });
+    } catch (error) {
+      console.error(error);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'content-type': 'application/json' });
+      }
+      res.end(JSON.stringify({ error: { message: error.message } }));
     }
+  });
 
-    if (req.url.startsWith('/api/logs/stream')) {
-      streamLogs(req, res, logStore);
-      return;
-    }
+  server.routerConfig = config;
+  server.logStore = logStore;
 
-    if (req.url.startsWith('/api/logs')) {
-      await serveLogs(req, res, logStore);
-      return;
-    }
+  return server;
+}
 
-    if (req.url.startsWith('/api/config')) {
-      serveConfig(res, config);
-      return;
-    }
+export async function startRouterServer({
+  port = Number(process.env.PORT ?? 8787),
+  host = process.env.HOST ?? '127.0.0.1',
+  configPath = process.env.ROUTER_CONFIG,
+  logPath = process.env.ROUTER_LOG_PATH ?? defaultLogPath
+} = {}) {
+  const server = await createRouterServer({ configPath, logPath });
+  await listen(server, port, host);
 
-    await handleProxyRequest(req, res, { config, logStore });
-  } catch (error) {
-    console.error(error);
-    if (!res.headersSent) {
-      res.writeHead(500, { 'content-type': 'application/json' });
-    }
-    res.end(JSON.stringify({ error: { message: error.message } }));
-  }
-});
-
-server.listen(port, () => {
-  console.log(`Claude Code router listening on http://localhost:${port}`);
-  console.log(`Set ANTHROPIC_BASE_URL=http://localhost:${port} before launching claude`);
-});
+  return {
+    server,
+    port: server.address().port,
+    host,
+    url: `http://localhost:${server.address().port}`
+  };
+}
 
 async function serveStatic(req, res) {
   const path = req.url === '/' ? '/index.html' : req.url;
@@ -109,4 +132,27 @@ function contentType(filePath) {
     default:
       return 'application/octet-stream';
   }
+}
+
+function listen(server, port, host) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, host, () => {
+      server.off('error', reject);
+      resolve();
+    });
+  });
+}
+
+async function main() {
+  const started = await startRouterServer();
+  console.log(`Claude Code router listening on ${started.url}`);
+  console.log(`Set ANTHROPIC_BASE_URL=${started.url} before launching claude`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
 }

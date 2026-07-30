@@ -1,8 +1,26 @@
 {
   "name": "claude-code-router",
   "version": "0.1.0",
-  "private": true,
+  "description": "Local Claude Code model router with request logging and a live dashboard.",
+  "private": false,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/patnaikd/claude-code-router.git"
+  },
+  "license": "UNLICENSED",
+  "bin": {
+    "claude-code-router": "bin/claude-code-router.js",
+    "ccr": "bin/claude-code-router.js"
+  },
+  "files": [
+    "bin",
+    "config/routes.example.json",
+    "public",
+    "src",
+    "README.md",
+    "package.json"
+  ],
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test"
