@@ -13,6 +13,12 @@ const HOP_BY_HOP_HEADERS = new Set([
   'transfer-encoding',
   'upgrade'
 ]);
+const UNSAFE_RESPONSE_HEADERS = new Set([
+  ...HOP_BY_HOP_HEADERS,
+  'content-encoding',
+  'content-length',
+  'content-md5'
+]);
 const REDACTED_HEADERS = new Set([
   'authorization',
   'x-api-key',
@@ -60,7 +66,7 @@ export async function handleProxyRequest(req, res, { config, logStore, fetchImpl
       duplex: 'half'
     });
     upstreamStatus = upstreamResponse.status;
-    upstreamHeaders = redactHeaders(Object.fromEntries(upstreamResponse.headers.entries()));
+    upstreamHeaders = sanitizeResponseHeaders(Object.fromEntries(upstreamResponse.headers.entries()));
 
     writeResponseHeaders(res, upstreamResponse);
 
@@ -125,6 +131,13 @@ export function redactHeaders(headers) {
   );
 }
 
+export function sanitizeResponseHeaders(headers) {
+  return Object.fromEntries(
+    Object.entries(redactHeaders(headers))
+      .filter(([name]) => !UNSAFE_RESPONSE_HEADERS.has(name.toLowerCase()))
+  );
+}
+
 export function buildTargetUrl(baseUrl, requestUrl) {
   const base = new URL(baseUrl);
   const incoming = new URL(requestUrl, 'http://router.local');
@@ -153,6 +166,7 @@ function buildOutboundHeaders(inboundHeaders, route) {
   if (apiKey) {
     headers.set('x-api-key', apiKey);
   }
+  headers.set('accept-encoding', 'identity');
 
   return headers;
 }
@@ -161,7 +175,7 @@ function writeResponseHeaders(res, upstreamResponse) {
   const headers = {};
 
   for (const [name, value] of upstreamResponse.headers.entries()) {
-    if (!HOP_BY_HOP_HEADERS.has(name.toLowerCase())) {
+    if (!UNSAFE_RESPONSE_HEADERS.has(name.toLowerCase())) {
       headers[name] = value;
     }
   }

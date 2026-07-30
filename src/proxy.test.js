@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { Readable, Writable } from 'node:stream';
 import test from 'node:test';
-import { handleProxyRequest } from './proxy.js';
+import { handleProxyRequest, sanitizeResponseHeaders } from './proxy.js';
 
 test('handleProxyRequest forwards rewritten body and records response capture', async () => {
   const entries = [];
@@ -47,20 +47,42 @@ test('handleProxyRequest forwards rewritten body and records response capture', 
       assert.equal(url, 'https://gateway.example.com/anthropic/v1/messages');
       assert.equal(JSON.parse(init.body).model, 'gateway/sonnet');
       assert.equal(init.headers.get('x-api-key'), 'upstream-secret');
+      assert.equal(init.headers.get('accept-encoding'), 'identity');
 
       return new Response('{"ok":true}', {
         status: 200,
-        headers: { 'content-type': 'application/json' }
+        headers: {
+          'content-type': 'application/json',
+          'content-encoding': 'gzip',
+          'content-length': '33'
+        }
       });
     }
   });
 
   assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.headers, { 'content-type': 'application/json' });
   assert.equal(Buffer.concat(responseChunks).toString('utf8'), '{"ok":true}');
   assert.equal(entries.length, 1);
   assert.equal(entries[0].route, 'sonnet-gateway');
   assert.equal(entries[0].request.headers.authorization, '[redacted]');
   assert.equal(entries[0].response.body.text, '{"ok":true}');
+});
+
+test('sanitizeResponseHeaders strips decoded-body compression headers', () => {
+  assert.deepEqual(sanitizeResponseHeaders({
+    'content-type': 'text/event-stream',
+    'content-encoding': 'br',
+    'content-length': '100',
+    'content-md5': 'checksum',
+    'transfer-encoding': 'chunked',
+    'x-api-key': 'secret',
+    'request-id': 'req_123'
+  }), {
+    'content-type': 'text/event-stream',
+    'x-api-key': '[redacted]',
+    'request-id': 'req_123'
+  });
 });
 
 test('handleProxyRequest does not write error headers after streaming has started', async () => {
