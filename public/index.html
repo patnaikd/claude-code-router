@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Claude Code Router</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="sidebar">
+        <div>
+          <h1>Claude Code Router</h1>
+          <p class="muted">Live LLM API traffic</p>
+        </div>
+        <section class="metrics" aria-label="Traffic metrics">
+          <div>
+            <span id="totalCalls">0</span>
+            <label>calls</label>
+          </div>
+          <div>
+            <span id="errorRate">0%</span>
+            <label>errors</label>
+          </div>
+          <div>
+            <span id="avgLatency">0ms</span>
+            <label>avg latency</label>
+          </div>
+        </section>
+        <section>
+          <h2>Routes</h2>
+          <div id="routes" class="route-list"></div>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <header class="toolbar">
+          <div class="filters">
+            <input id="search" type="search" placeholder="Filter by model, route, path, status">
+            <select id="statusFilter" aria-label="Status filter">
+              <option value="">All statuses</option>
+              <option value="2">2xx</option>
+              <option value="4">4xx</option>
+              <option value="5">5xx</option>
+            </select>
+          </div>
+          <button id="pauseButton" type="button">Pause</button>
+        </header>
+
+        <div class="traffic">
+          <section class="calls" aria-label="API calls">
+            <div id="callList" class="call-list"></div>
+          </section>
+          <section class="detail" aria-label="Selected call details">
+            <div id="emptyState" class="empty">No calls captured yet</div>
+            <article id="detailPanel" class="detail-panel hidden">
+              <div class="detail-head">
+                <div>
+                  <h2 id="detailTitle"></h2>
+                  <p id="detailSubtitle" class="muted"></p>
+                </div>
+                <span id="detailStatus" class="status"></span>
+              </div>
+              <div class="tabs" role="tablist">
+                <button class="tab active" data-tab="summary" type="button">Summary</button>
+                <button class="tab" data-tab="request" type="button">Request</button>
+                <button class="tab" data-tab="response" type="button">Response</button>
+              </div>
+              <pre id="detailBody"></pre>
+            </article>
+          </section>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

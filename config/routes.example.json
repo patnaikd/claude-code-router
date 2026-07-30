@@ -1,0 +1,29 @@
+{
+  "default": {
+    "baseUrl": "https://api.anthropic.com",
+    "apiKeyEnv": "ANTHROPIC_API_KEY"
+  },
+  "routes": [
+    {
+      "name": "haiku-fast",
+      "match": {
+        "modelIncludes": "haiku"
+      },
+      "target": {
+        "baseUrl": "https://api.anthropic.com",
+        "apiKeyEnv": "ANTHROPIC_API_KEY"
+      }
+    },
+    {
+      "name": "gateway-sonnet",
+      "match": {
+        "model": "claude-sonnet-4-20250514"
+      },
+      "target": {
+        "baseUrl": "https://your-anthropic-compatible-gateway.example.com",
+        "apiKeyEnv": "GATEWAY_API_KEY",
+        "model": "gateway/sonnet"
+      }
+    }
+  ]
+}
