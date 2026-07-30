@@ -48,6 +48,9 @@ export async function handleProxyRequest(req, res, { config, logStore, fetchImpl
       body: captureText(requestBodyText)
     }
   };
+  let upstreamStatus;
+  let upstreamHeaders = {};
+  let responseCapture = createCapture();
 
   try {
     const upstreamResponse = await fetchImpl(targetUrl, {
@@ -56,10 +59,11 @@ export async function handleProxyRequest(req, res, { config, logStore, fetchImpl
       body: shouldSendBody(req.method) ? outboundBodyText : undefined,
       duplex: 'half'
     });
+    upstreamStatus = upstreamResponse.status;
+    upstreamHeaders = redactHeaders(Object.fromEntries(upstreamResponse.headers.entries()));
 
     writeResponseHeaders(res, upstreamResponse);
 
-    const responseCapture = createCapture();
     if (upstreamResponse.body) {
       const captureStream = new TransformCapture(responseCapture);
       await pipeline(upstreamResponse.body, captureStream, res);
@@ -69,27 +73,33 @@ export async function handleProxyRequest(req, res, { config, logStore, fetchImpl
 
     logStore.append({
       ...baseLog,
-      status: upstreamResponse.status,
+      status: upstreamStatus,
       durationMs: Date.now() - startedAt,
       response: {
-        headers: redactHeaders(Object.fromEntries(upstreamResponse.headers.entries())),
+        headers: upstreamHeaders,
         body: responseCapture.toJSON()
       }
     });
   } catch (error) {
-    const status = error.name === 'AbortError' ? 504 : 502;
+    const status = upstreamStatus ?? (error.name === 'AbortError' ? 504 : 502);
     const body = JSON.stringify({
       error: {
         type: 'router_error',
         message: error.message
       }
     });
+    let loggedBody = responseCapture.toJSON();
 
-    res.writeHead(status, {
-      'content-type': 'application/json',
-      'content-length': Buffer.byteLength(body)
-    });
-    res.end(body);
+    if (!res.headersSent) {
+      res.writeHead(status, {
+        'content-type': 'application/json',
+        'content-length': Buffer.byteLength(body)
+      });
+      res.end(body);
+      loggedBody = captureText(body);
+    } else if (!res.writableEnded && !res.destroyed) {
+      res.destroy?.(error);
+    }
 
     logStore.append({
       ...baseLog,
@@ -97,8 +107,8 @@ export async function handleProxyRequest(req, res, { config, logStore, fetchImpl
       durationMs: Date.now() - startedAt,
       error: error.message,
       response: {
-        headers: {},
-        body: captureText(body)
+        headers: upstreamHeaders,
+        body: loggedBody
       }
     });
   }
